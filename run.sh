@@ -52,10 +52,11 @@ case $choice in
         sleep 2
 
         # 3. Estrazione e avvio Client Multipli
-        NUM_CLIENTS=$(grep -oP '"num_clients": \K\d+' config.json)
-        if [ -z "$NUM_CLIENTS" ]; then NUM_CLIENTS=1; fi # Default a 1 se non trovato
+        NUM_CLIENTS=$(grep "\"num_clients\":" config.json | grep -oP '\d+')
+        if [ -z "$NUM_CLIENTS" ]; then NUM_CLIENTS=1; fi
 
         echo "--- Avvio di $NUM_CLIENTS Client in parallelo ---"
+        # ... resto del ciclo for ...
         
         # Lanciamo N-1 client in background scrivendo i log su file
         for (( i=1; i<$NUM_CLIENTS; i++ )); do

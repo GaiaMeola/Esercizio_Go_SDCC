@@ -8,14 +8,15 @@ import (
 
 // Config riflette la struttura del file JSON
 type Config struct {
-	RegistryAddr   string `json:"registry_addr"`
-	ClientSettings struct {
-		CacheTTL int `json:"cache_ttl_seconds"`
-	} `json:"client_settings"`
-	Servers []struct {
-		Port   string `json:"port"`
-		Weight int    `json:"weight"`
-	} `json:"servers"`
+    RegistryAddr   string `json:"registry_addr"`
+    ClientSettings struct {
+        CacheTTL   int `json:"cache_ttl_seconds"`
+        NumClients int `json:"num_clients"`
+    } `json:"client_settings"`
+    Servers []struct {
+        Port   string `json:"port"`
+        Weight int    `json:"weight"`
+    } `json:"servers"`
 }
 
 // LoadConfig legge il file JSON e lo trasforma nella struttura Config

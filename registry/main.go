@@ -38,6 +38,7 @@ func (r *Registry) GetServers(args struct{}, reply *[]common.ServiceInfo) error 
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	for _, info := range r.servers {
+		*reply = []common.ServiceInfo{} // Inizializza/Pulisce la lista prima del ciclo
 		*reply = append(*reply, info)
 	}
 	return nil
