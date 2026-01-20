@@ -5,22 +5,23 @@ cleanup() {
     echo "--- Pulizia processi in corso... ---"
     
     # Estraiamo tutte le porte dal config.json per chiuderle forzatamente
-    # Legge la porta del registry e tutte le porte dei server
     PORTS=$(grep -oP '"(port|registry_addr)": "\K[^"]+' config.json | grep -oP '\d+')
     
     for port in $PORTS; do
         fuser -k $port/tcp 2>/dev/null
     done
     
+    # Chiudiamo tutti i processi Go e puliamo i file di log temporanei
     killall registry server client 2>/dev/null
+    rm -f client_*.log
     sleep 1
 }
 
 echo "==============================================="
-echo "   SDCC Project - Configurable Runner          "
+echo "   SDCC Project - Fully Configurable Runner    "
 echo "==============================================="
 echo "Cosa vuoi fare?"
-echo "1) Avvia sistema (Registry + Servers da Config + Client)"
+echo "1) Avvia sistema (Registry + Servers + N Client da Config)"
 echo "2) Solo pulizia (Reset)"
 echo "3) Esci"
 read -p "Scegli un'opzione [1-3]: " choice
@@ -32,25 +33,38 @@ case $choice in
         mkdir -p state
         echo "0" > state/counter.txt
 
-        # Estraiamo l'indirizzo del registry (es. localhost:5000)
+        # 1. Estrazione e avvio Registry
         REG_ADDR=$(grep -oP '"registry_addr": "\K[^"]+' config.json)
         echo "--- Avvio Service Registry su $REG_ADDR ---"
         go run registry/main.go &
         sleep 2
 
-        echo "--- Avvio Server Replicati ---"
-        # Estraiamo liste di porte e pesi usando grep e trasformandoli in array
+        # 2. Estrazione e avvio Server Replicati
         PORTS=($(grep -oP '"port": "\K[^"]+' config.json))
         WEIGHTS=($(grep -oP '"weight": \K[^, }]+' config.json))
 
+        echo "--- Avvio Server Replicati ---"
         for i in "${!PORTS[@]}"; do
             echo "Lancio Server sulla porta ${PORTS[$i]} con peso ${WEIGHTS[$i]}..."
             go run server/main.go ${PORTS[$i]} ${WEIGHTS[$i]} &
         done
         
         sleep 2
-        echo "--- Avvio Client ---"
-        echo "Configurazione caricata. Premi CTRL+C per fermare tutto."
+
+        # 3. Estrazione e avvio Client Multipli
+        NUM_CLIENTS=$(grep -oP '"num_clients": \K\d+' config.json)
+        if [ -z "$NUM_CLIENTS" ]; then NUM_CLIENTS=1; fi # Default a 1 se non trovato
+
+        echo "--- Avvio di $NUM_CLIENTS Client in parallelo ---"
+        
+        # Lanciamo N-1 client in background scrivendo i log su file
+        for (( i=1; i<$NUM_CLIENTS; i++ )); do
+            echo "Avvio Client $i in background (Log: client_$i.log)..."
+            go run client/main.go > "client_$i.log" 2>&1 &
+        done
+
+        # L'ultimo client lo lanciamo in primo piano per vedere l'output a schermo
+        echo "Avvio ultimo Client in primo piano. Premi CTRL+C per fermare tutto."
         go run client/main.go
         ;;
     2)

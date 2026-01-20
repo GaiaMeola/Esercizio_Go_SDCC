@@ -2,7 +2,7 @@
   "registry_addr": "localhost:5000",
   "client_settings": {
     "cache_ttl_seconds": 15,
-    "num_clients": 2
+    "num_clients": 3
   },
   "servers": [
     { "port": "8001", "weight": 1 },
