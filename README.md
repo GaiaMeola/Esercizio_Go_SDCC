@@ -47,3 +47,10 @@ service-registry-go/
 ├── server/           # Logica dei server (Stateless + Stateful)
 ├── client/           # Logica del client, Load Balancer e Cache
 └── state/            # Directory locale per la persistenza dello stato
+
+## 6. Esecuzione Rapida (Script)
+Se utilizzi un sistema Linux/macOS, puoi avviare l'intero ecosistema con un unico comando:
+
+```bash
+chmod +x run.sh
+./run.sh
