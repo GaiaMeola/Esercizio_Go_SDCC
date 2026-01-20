@@ -30,17 +30,19 @@ func (s *MyService) Increment(args common.ArgsStateful, reply *common.Reply) err
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	// Legge lo stato dal file condiviso
-	data, err := os.ReadFile("../state/counter.txt")
+	// Percorso relativo: assicurati di lanciare il server dalla sua cartella
+	// o usa un percorso assoluto se preferisci.
+	filePath := "../state/counter.txt"
+
+	data, err := os.ReadFile(filePath)
 	if err != nil {
-		return fmt.Errorf("errore lettura stato: %v", err)
+		return fmt.Errorf("errore lettura stato (assicurati che la cartella state esista): %v", err)
 	}
 
 	currentVal, _ := strconv.Atoi(strings.TrimSpace(string(data)))
 	newVal := currentVal + args.Value
 
-	// Scrive il nuovo stato
-	err = os.WriteFile("../state/counter.txt", []byte(strconv.Itoa(newVal)), 0644)
+	err = os.WriteFile(filePath, []byte(strconv.Itoa(newVal)), 0644)
 	if err != nil {
 		return fmt.Errorf("errore scrittura stato: %v", err)
 	}
@@ -58,36 +60,53 @@ func main() {
 	weight, _ := strconv.Atoi(os.Args[2])
 	addr := "localhost:" + port
 
-	// Setup RPC
+	// 1. Setup RPC locale del Server
 	service := new(MyService)
 	rpc.Register(service)
 
-	listener, _ := net.Listen("tcp", ":"+port)
+	listener, err := net.Listen("tcp", ":"+port)
+	if err != nil {
+		log.Fatalf("Errore avvio listener sulla porta %s: %v", port, err)
+	}
 	log.Printf("Server RPC attivo su %s (Peso: %d)", addr, weight)
 
-	// Registrazione automatica al Registry
+	// 2. Connessione al Registry (obbligatoria per evitare il crash)
 	regClient, err := rpc.Dial("tcp", "localhost:5000")
-	if err == nil {
-		var ok bool
-		regArgs := common.RegistryArgs{Service: common.ServiceInfo{Addr: addr, Weight: weight}}
-		regClient.Call("Registry.Register", regArgs, &ok)
+	if err != nil {
+		log.Fatal("ERRORE: Impossibile connettersi al Registry (porta 5000). Avvialo prima!")
+	}
+
+	// 3. Registrazione automatica
+	var ok bool
+	regArgs := common.RegistryArgs{Service: common.ServiceInfo{Addr: addr, Weight: weight}}
+	err = regClient.Call("Registry.Register", regArgs, &ok)
+	if err != nil {
+		log.Printf("Errore registrazione: %v", err)
+	} else {
 		log.Println("Registrato con successo al Registry")
 	}
 
-	// Gestione Deregistrazione allo spegnimento (CTRL+C)
+	// 4. Gestione Deregistrazione allo spegnimento (CTRL+C)
 	c := make(chan os.Signal, 1)
 	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
 	go func() {
 		<-c
-		log.Println("Spegnimento in corso...")
-		var ok bool
-		regArgs := common.RegistryArgs{Service: common.ServiceInfo{Addr: addr}}
-		regClient.Call("Registry.Deregister", regArgs, &ok)
+		log.Println("\nSpegnimento in corso...")
+		// Comunichiamo al registry che ce ne andiamo
+		var reply bool
+		deregArgs := common.RegistryArgs{Service: common.ServiceInfo{Addr: addr}}
+		regClient.Call("Registry.Deregister", deregArgs, &reply)
+		regClient.Close()
 		os.Exit(0)
 	}()
 
+	// 5. Accettazione richieste
 	for {
-		conn, _ := listener.Accept()
+		conn, err := listener.Accept()
+		if err != nil {
+			log.Printf("Errore accettazione connessione: %v", err)
+			continue
+		}
 		go rpc.ServeConn(conn)
 	}
 }
