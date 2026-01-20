@@ -36,27 +36,14 @@ Il client implementa algoritmi di selezione dinamica per distribuire le richiest
 ### Configurazione Centralizzata
 Parametri come porte, indirizzi, numero di client e pesi dei server sono isolati nel file `config.json`, rendendo il sistema scalabile senza modifiche al codice sorgente.
 
----
-
-## 4. Struttura del Progetto
-```text
-service-registry-go/
-├── common/           # Strutture dati, definizioni RPC e logica JSON
-├── registry/         # Implementazione del Service Registry
-├── server/           # Logica del Service Provider (Stateless + Stateful)
-├── client/           # Logica del Service Consumer, Load Balancer e Cache
-├── state/            # Directory per la persistenza dello stato condiviso
-├── config.json       # File di configurazione centralizzato
-└── run.sh            # Script di orchestrazione e gestione processi
-
-5. Guida all'Esecuzione
-Prerequisiti
+## 4. Guida all'Esecuzione
+* **Prerequisiti**
 
     Go 1.20 o superiore.
 
     Ambiente Linux/WSL2 per l'esecuzione dello script di automazione.
 
-Avvio Interattivo
+* **Avvio Interattivo**
 
 Il progetto include uno script di orchestrazione che automatizza la pulizia delle porte e l'avvio sincronizzato dei componenti:
 
@@ -68,8 +55,19 @@ Il progetto include uno script di orchestrazione che automatizza la pulizia dell
 
     Selezionare l'opzione 1 per avviare l'intero ecosistema.
 
-Verifica dei Requisiti
+* **Verifica dei Requisiti**
 
     Consistenza: Il contatore globale incrementa in modo coerente indipendentemente dal server selezionato dal Load Balancer.
 
     Discovery: Spegnendo un server (CTRL+C), il Registry lo rimuove e il Client smette di inviargli richieste dopo l'aggiornamento della cache.
+
+## 5. Struttura del Progetto
+```text
+service-registry-go/
+├── common/           # Strutture dati, definizioni RPC e logica JSON
+├── registry/         # Implementazione del Service Registry
+├── server/           # Logica del Service Provider (Stateless + Stateful)
+├── client/           # Logica del Service Consumer, Load Balancer e Cache
+├── state/            # Directory per la persistenza dello stato condiviso
+├── config.json       # File di configurazione centralizzato
+└── run.sh            # Script di orchestrazione e gestione processi
