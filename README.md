@@ -49,8 +49,12 @@ service-registry-go/
 └── state/            # Directory locale per la persistenza dello stato
 
 ## 6. Esecuzione Rapida (Script)
-Se utilizzi un sistema Linux/macOS, puoi avviare l'intero ecosistema con un unico comando:
+## Istruzioni per l'uso
+Il sistema è interamente configurabile tramite il file `config.json` nella root del progetto.
 
-```bash
-chmod +x run.sh
-./run.sh
+### Avvio rapido
+1. Aprire il terminale nella root del progetto.
+2. Eseguire lo script: `./run.sh`
+3. Selezionare l'opzione `1` per avviare l'intero ecosistema.
+
+Lo script si occuperà di lanciare il Registry, leggere i server definiti nel JSON, avviarli con i rispettivi pesi e far partire il client di test.
