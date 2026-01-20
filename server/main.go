@@ -6,48 +6,88 @@ import (
 	"net"
 	"net/rpc"
 	"os"
+	"os/signal"
+	"service-registry-go/common"
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 )
 
 type MyService struct {
 	mu sync.Mutex
 }
 
-// Servizio Stateful: Contatore su file condiviso
-func (s *MyService) DoWork(args int, reply *int) error {
+// Servizio Stateless: Somma
+func (s *MyService) Add(args common.ArgsStateless, reply *common.Reply) error {
+	reply.Result = args.A + args.B
+	log.Printf("Richiesta Stateless: %d + %d", args.A, args.B)
+	return nil
+}
+
+// Servizio Stateful: Contatore condiviso su file
+func (s *MyService) Increment(args common.ArgsStateful, reply *common.Reply) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	// Leggi dal file "condiviso"
-	data, _ := os.ReadFile("../state/counter.txt")
-	count, _ := strconv.Atoi(strings.TrimSpace(string(data)))
+	// Legge lo stato dal file condiviso
+	data, err := os.ReadFile("../state/counter.txt")
+	if err != nil {
+		return fmt.Errorf("errore lettura stato: %v", err)
+	}
 
-	count++
-	
-	// Scrivi il nuovo valore
-	os.WriteFile("../state/counter.txt", []byte(strconv.Itoa(count)), 0644)
-	
-	*reply = count
+	currentVal, _ := strconv.Atoi(strings.TrimSpace(string(data)))
+	newVal := currentVal + args.Value
+
+	// Scrive il nuovo stato
+	err = os.WriteFile("../state/counter.txt", []byte(strconv.Itoa(newVal)), 0644)
+	if err != nil {
+		return fmt.Errorf("errore scrittura stato: %v", err)
+	}
+
+	reply.Result = newVal
+	log.Printf("Richiesta Stateful: Incremento di %d. Nuovo totale: %d", args.Value, newVal)
 	return nil
 }
 
 func main() {
-	port := os.Args[1] // Passiamo la porta come argomento: es. 8001
+	if len(os.Args) < 3 {
+		log.Fatal("Uso: go run main.go <porta> <peso>")
+	}
+	port := os.Args[1]
 	weight, _ := strconv.Atoi(os.Args[2])
+	addr := "localhost:" + port
 
-	rpc.Register(new(MyService))
-	l, _ := net.Listen("tcp", ":"+port)
+	// Setup RPC
+	service := new(MyService)
+	rpc.Register(service)
 
-	// Registrazione automatica
-	client, _ := rpc.Dial("tcp", "localhost:5000")
-	var ok bool
-	client.Call("Registry.Register", struct{Addr string; Weight int}{"localhost:"+port, weight}, &ok)
+	listener, _ := net.Listen("tcp", ":"+port)
+	log.Printf("Server RPC attivo su %s (Peso: %d)", addr, weight)
 
-	log.Printf("Server attivo sulla porta %s...", port)
+	// Registrazione automatica al Registry
+	regClient, err := rpc.Dial("tcp", "localhost:5000")
+	if err == nil {
+		var ok bool
+		regArgs := common.RegistryArgs{Service: common.ServiceInfo{Addr: addr, Weight: weight}}
+		regClient.Call("Registry.Register", regArgs, &ok)
+		log.Println("Registrato con successo al Registry")
+	}
+
+	// Gestione Deregistrazione allo spegnimento (CTRL+C)
+	c := make(chan os.Signal, 1)
+	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
+	go func() {
+		<-c
+		log.Println("Spegnimento in corso...")
+		var ok bool
+		regArgs := common.RegistryArgs{Service: common.ServiceInfo{Addr: addr}}
+		regClient.Call("Registry.Deregister", regArgs, &ok)
+		os.Exit(0)
+	}()
+
 	for {
-		conn, _ := l.Accept()
+		conn, _ := listener.Accept()
 		go rpc.ServeConn(conn)
 	}
 }

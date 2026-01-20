@@ -4,30 +4,37 @@ import (
 	"log"
 	"net"
 	"net/rpc"
+	"service-registry-go/common"
 	"sync"
 )
 
-type ServiceInfo struct {
-	Addr   string
-	Weight int
-}
-
 type Registry struct {
 	mu      sync.Mutex
-	servers map[string]ServiceInfo
+	servers map[string]common.ServiceInfo
 }
 
-func (r *Registry) Register(s ServiceInfo, reply *bool) error {
+// Register aggiunge un server alla lista
+func (r *Registry) Register(args common.RegistryArgs, reply *bool) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if r.servers == nil { r.servers = make(map[string]ServiceInfo) }
-	r.servers[s.Addr] = s
-	log.Printf("Registrato server: %s con peso %d", s.Addr, s.Weight)
+	r.servers[args.Service.Addr] = args.Service
+	log.Printf("Server registrato: %s (Peso: %d)", args.Service.Addr, args.Service.Weight)
 	*reply = true
 	return nil
 }
 
-func (r *Registry) GetServers(args struct{}, reply *[]ServiceInfo) error {
+// Deregister rimuove un server
+func (r *Registry) Deregister(args common.RegistryArgs, reply *bool) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	delete(r.servers, args.Service.Addr)
+	log.Printf("Server rimosso: %s", args.Service.Addr)
+	*reply = true
+	return nil
+}
+
+// GetServers restituisce tutti i server attivi al client
+func (r *Registry) GetServers(args struct{}, reply *[]common.ServiceInfo) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	for _, info := range r.servers {
@@ -37,12 +44,19 @@ func (r *Registry) GetServers(args struct{}, reply *[]ServiceInfo) error {
 }
 
 func main() {
-	reg := &Registry{servers: make(map[string]ServiceInfo)}
+	reg := &Registry{
+		servers: make(map[string]common.ServiceInfo),
+	}
 	rpc.Register(reg)
-	l, _ := net.Listen("tcp", ":5000")
-	log.Println("Registry RPC attivo sulla porta 5000...")
+
+	listener, err := net.Listen("tcp", ":5000")
+	if err != nil {
+		log.Fatal("Errore avvio Registry:", err)
+	}
+	log.Println("Service Registry in ascolto sulla porta 5000...")
+	
 	for {
-		conn, _ := l.Accept()
+		conn, _ := listener.Accept()
 		go rpc.ServeConn(conn)
 	}
 }
