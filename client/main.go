@@ -65,7 +65,7 @@ func selectWeightedServer(servers []common.ServiceInfo) common.ServiceInfo {
 func main() {
 	// 1. Carica la configurazione dal file JSON
 	var err error
-	globalConfig, err = common.LoadConfig("../config.json")
+	globalConfig, err = common.LoadConfig("config.json")
 	if err != nil {
 		log.Fatal("Impossibile caricare config.json: ", err)
 	}

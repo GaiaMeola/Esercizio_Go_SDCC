@@ -30,7 +30,7 @@ func (s *MyService) Increment(args common.ArgsStateful, reply *common.Reply) err
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	filePath := "../state/counter.txt"
+	filePath := "state/counter.txt"
 
 	data, err := os.ReadFile(filePath)
 	if err != nil {
@@ -60,7 +60,7 @@ func main() {
 
 	// 1. CARICAMENTO CONFIGURAZIONE
 	// Leggiamo il JSON per sapere dove inviare la registrazione
-	config, err := common.LoadConfig("../config.json")
+	config, err := common.LoadConfig("config.json")
 	if err != nil {
 		log.Fatal("Errore caricamento config.json: ", err)
 	}
