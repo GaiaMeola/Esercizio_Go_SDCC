@@ -1,27 +1,53 @@
 package common
 
-// ServiceInfo contiene i dettagli che il Registry condivide con i Client
-type ServiceInfo struct {
-	Addr   string // Indirizzo (es. "localhost:8001")
-	Weight int    // Peso per il Load Balancing Weighted
+import (
+	"encoding/json"
+	"os"
+)
+
+
+// Config riflette la struttura del file JSON
+type Config struct {
+	RegistryAddr   string `json:"registry_addr"`
+	ClientSettings struct {
+		CacheTTL int `json:"cache_ttl_seconds"`
+	} `json:"client_settings"`
+	Servers []struct {
+		Port   string `json:"port"`
+		Weight int    `json:"weight"`
+	} `json:"servers"`
 }
 
-// ArgsStateless: Per un servizio semplice come la somma (Stateless)
+// LoadConfig legge il file JSON e lo trasforma nella struttura Config
+func LoadConfig(path string) (Config, error) {
+	var config Config
+	file, err := os.Open(path)
+	if err != nil {
+		return config, err
+	}
+	defer file.Close()
+	decoder := json.NewDecoder(file)
+	err = decoder.Decode(&config)
+	return config, err
+}
+
+type ServiceInfo struct {
+	Addr   string 
+	Weight int    
+}
+
 type ArgsStateless struct {
 	A, B int
 }
 
-// ArgsStateful: Per il contatore condiviso (Stateful)
 type ArgsStateful struct {
-	Value int // Quanto vogliamo incrementare
+	Value int 
 }
 
-// Reply: Risposta generica che restituisce un intero (risultato o valore contatore)
 type Reply struct {
 	Result int
 }
 
-// RegistryArgs: Usato dai Server per registrarsi/deregistrarsi
 type RegistryArgs struct {
 	Service ServiceInfo
 }

@@ -9,27 +9,25 @@ import (
 	"time"
 )
 
-// Struttura per gestire la Cache locale
 type Cache struct {
 	Servers    []common.ServiceInfo
 	LastUpdate time.Time
 	TTL        time.Duration
 }
 
-var localCache = Cache{
-	TTL: 10 * time.Second, // La cache scade dopo 10 secondi
-}
+var localCache Cache
+var globalConfig common.Config
 
-// Funzione per ottenere i server (con Service Discovery e Caching)
 func getServers() []common.ServiceInfo {
+	// Usa il TTL caricato dal JSON
 	if time.Since(localCache.LastUpdate) < localCache.TTL && len(localCache.Servers) > 0 {
 		return localCache.Servers
 	}
 
-	// Se la cache è scaduta, interroga il Registry
-	regClient, err := rpc.Dial("tcp", "localhost:5000")
+	// Usa l'indirizzo del Registry caricato dal JSON
+	regClient, err := rpc.Dial("tcp", globalConfig.RegistryAddr)
 	if err != nil {
-		log.Println("Errore: Registry non raggiungibile.")
+		log.Println("Errore: Registry non raggiungibile a", globalConfig.RegistryAddr)
 		return localCache.Servers
 	}
 	defer regClient.Close()
@@ -37,7 +35,6 @@ func getServers() []common.ServiceInfo {
 	var serverList []common.ServiceInfo
 	err = regClient.Call("Registry.GetServers", struct{}{}, &serverList)
 	if err != nil {
-		log.Println("Errore lookup server:", err)
 		return localCache.Servers
 	}
 
@@ -47,7 +44,6 @@ func getServers() []common.ServiceInfo {
 	return serverList
 }
 
-// Algoritmo Weighted Load Balancing
 func selectWeightedServer(servers []common.ServiceInfo) common.ServiceInfo {
 	totalWeight := 0
 	for _, s := range servers {
@@ -67,45 +63,50 @@ func selectWeightedServer(servers []common.ServiceInfo) common.ServiceInfo {
 }
 
 func main() {
+	// 1. Carica la configurazione dal file JSON
+	var err error
+	globalConfig, err = common.LoadConfig("../config.json")
+	if err != nil {
+		log.Fatal("Impossibile caricare config.json: ", err)
+	}
+
+	// 2. Inizializza la Cache con il TTL preso dal file
+	localCache = Cache{
+		TTL: time.Duration(globalConfig.ClientSettings.CacheTTL) * time.Second,
+	}
+
 	rand.Seed(time.Now().UnixNano())
+	log.Printf("Client avviato. Registry: %s, TTL Cache: %v", globalConfig.RegistryAddr, localCache.TTL)
 
 	for {
 		servers := getServers()
 		if len(servers) == 0 {
-			log.Println("Nessun server disponibile. Riprovo tra 5 secondi...")
+			log.Println("Nessun server disponibile...")
 			time.Sleep(5 * time.Second)
 			continue
 		}
 
-		// Scegliamo un server usando l'algoritmo Weighted
 		target := selectWeightedServer(servers)
-		fmt.Printf("\n--- Chiamata verso: %s (Peso: %d) ---\n", target.Addr, target.Weight)
+		fmt.Printf("\n--- Richiesta a: %s (Peso: %d) ---\n", target.Addr, target.Weight)
 
-		// Connessione RPC al Server scelto
 		client, err := rpc.Dial("tcp", target.Addr)
 		if err != nil {
-			log.Printf("Server %s offline, invalido la cache...", target.Addr)
-			localCache.Servers = nil // Invalida la cache per forzare un nuovo lookup
+			log.Printf("Server %s offline, svuoto cache...", target.Addr)
+			localCache.Servers = nil
 			continue
 		}
 
-		// 1. Test Servizio Stateless (Somma)
-		argsStateless := common.ArgsStateless{A: 10, B: 20}
+		// Test Stateless
 		var replyStateless common.Reply
-		err = client.Call("MyService.Add", argsStateless, &replyStateless)
-		if err == nil {
-			fmt.Printf("[Stateless] Somma 10+20 = %d\n", replyStateless.Result)
-		}
+		client.Call("MyService.Add", common.ArgsStateless{A: 10, B: 20}, &replyStateless)
+		fmt.Printf("[Stateless] 10+20 = %d\n", replyStateless.Result)
 
-		// 2. Test Servizio Stateful (Contatore)
-		argsStateful := common.ArgsStateful{Value: 1}
+		// Test Stateful
 		var replyStateful common.Reply
-		err = client.Call("MyService.Increment", argsStateful, &replyStateful)
-		if err == nil {
-			fmt.Printf("[Stateful] Contatore Globale: %d\n", replyStateful.Result)
-		}
+		client.Call("MyService.Increment", common.ArgsStateful{Value: 1}, &replyStateful)
+		fmt.Printf("[Stateful] Contatore Globale: %d\n", replyStateful.Result)
 
 		client.Close()
-		time.Sleep(3 * time.Second) // Attendi prima della prossima chiamata
+		time.Sleep(3 * time.Second)
 	}
 }

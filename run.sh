@@ -1,26 +1,69 @@
 #!/bin/bash
 
-# Pulisce eventuali processi precedenti
-killall registry server client 2>/dev/null
+# Funzione per pulire i processi basandosi sulle porte nel file config.json
+cleanup() {
+    echo "--- Pulizia processi in corso... ---"
+    
+    # Estraiamo tutte le porte dal config.json per chiuderle forzatamente
+    # Legge la porta del registry e tutte le porte dei server
+    PORTS=$(grep -oP '"(port|registry_addr)": "\K[^"]+' config.json | grep -oP '\d+')
+    
+    for port in $PORTS; do
+        fuser -k $port/tcp 2>/dev/null
+    done
+    
+    killall registry server client 2>/dev/null
+    sleep 1
+}
 
-echo "--- Inizializzazione Ambiente ---"
-mkdir -p state
-echo "0" > state/counter.txt
+echo "==============================================="
+echo "   SDCC Project - Configurable Runner          "
+echo "==============================================="
+echo "Cosa vuoi fare?"
+echo "1) Avvia sistema (Registry + Servers da Config + Client)"
+echo "2) Solo pulizia (Reset)"
+echo "3) Esci"
+read -p "Scegli un'opzione [1-3]: " choice
 
-echo "--- Avvio Service Registry ---"
-go run registry/main.go &
-sleep 2 # Attende che il registry sia pronto
+case $choice in
+    1)
+        cleanup
+        echo "--- Inizializzazione Stato ---"
+        mkdir -p state
+        echo "0" > state/counter.txt
 
-echo "--- Avvio Server Replicati ---"
-# Avvia Server 1 (Porta 8001, Peso 1)
-go run server/main.go 8001 1 &
-# Avvia Server 2 (Porta 8002, Peso 10)
-go run server/main.go 8002 10 &
-sleep 2
+        # Estraiamo l'indirizzo del registry (es. localhost:5000)
+        REG_ADDR=$(grep -oP '"registry_addr": "\K[^"]+' config.json)
+        echo "--- Avvio Service Registry su $REG_ADDR ---"
+        go run registry/main.go &
+        sleep 2
 
-echo "--- Avvio Client ---"
-echo "Premi CTRL+C per fermare tutto il sistema"
-go run client/main.go
+        echo "--- Avvio Server Replicati ---"
+        # Estraiamo liste di porte e pesi usando grep e trasformandoli in array
+        PORTS=($(grep -oP '"port": "\K[^"]+' config.json))
+        WEIGHTS=($(grep -oP '"weight": \K[^, }]+' config.json))
 
-# Quando il client viene fermato, chiude anche i processi in background
-trap "kill 0" EXIT
+        for i in "${!PORTS[@]}"; do
+            echo "Lancio Server sulla porta ${PORTS[$i]} con peso ${WEIGHTS[$i]}..."
+            go run server/main.go ${PORTS[$i]} ${WEIGHTS[$i]} &
+        done
+        
+        sleep 2
+        echo "--- Avvio Client ---"
+        echo "Configurazione caricata. Premi CTRL+C per fermare tutto."
+        go run client/main.go
+        ;;
+    2)
+        cleanup
+        echo "Sistema pulito."
+        ;;
+    3)
+        exit 0
+        ;;
+    *)
+        echo "Opzione non valida."
+        ;;
+esac
+
+# Chiude tutto automaticamente quando chiudi lo script
+trap "cleanup; exit" INT TERM EXIT

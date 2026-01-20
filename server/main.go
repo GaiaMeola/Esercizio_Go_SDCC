@@ -30,13 +30,11 @@ func (s *MyService) Increment(args common.ArgsStateful, reply *common.Reply) err
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	// Percorso relativo: assicurati di lanciare il server dalla sua cartella
-	// o usa un percorso assoluto se preferisci.
 	filePath := "../state/counter.txt"
 
 	data, err := os.ReadFile(filePath)
 	if err != nil {
-		return fmt.Errorf("errore lettura stato (assicurati che la cartella state esista): %v", err)
+		return fmt.Errorf("errore lettura stato: %v", err)
 	}
 
 	currentVal, _ := strconv.Atoi(strings.TrimSpace(string(data)))
@@ -60,23 +58,30 @@ func main() {
 	weight, _ := strconv.Atoi(os.Args[2])
 	addr := "localhost:" + port
 
-	// 1. Setup RPC locale del Server
+	// 1. CARICAMENTO CONFIGURAZIONE
+	// Leggiamo il JSON per sapere dove inviare la registrazione
+	config, err := common.LoadConfig("../config.json")
+	if err != nil {
+		log.Fatal("Errore caricamento config.json: ", err)
+	}
+
+	// 2. Setup RPC locale
 	service := new(MyService)
 	rpc.Register(service)
 
 	listener, err := net.Listen("tcp", ":"+port)
 	if err != nil {
-		log.Fatalf("Errore avvio listener sulla porta %s: %v", port, err)
+		log.Fatalf("Errore avvio listener: %v", err)
 	}
-	log.Printf("Server RPC attivo su %s (Peso: %d)", addr, weight)
+	log.Printf("Server attivo su %s (Registry puntato a: %s)", addr, config.RegistryAddr)
 
-	// 2. Connessione al Registry (obbligatoria per evitare il crash)
-	regClient, err := rpc.Dial("tcp", "localhost:5000")
+	// 3. Connessione al Registry usando l'indirizzo del JSON
+	regClient, err := rpc.Dial("tcp", config.RegistryAddr)
 	if err != nil {
-		log.Fatal("ERRORE: Impossibile connettersi al Registry (porta 5000). Avvialo prima!")
+		log.Fatal("ERRORE: Impossibile connettersi al Registry. Controlla config.json e riprova.")
 	}
 
-	// 3. Registrazione automatica
+	// 4. Registrazione automatica
 	var ok bool
 	regArgs := common.RegistryArgs{Service: common.ServiceInfo{Addr: addr, Weight: weight}}
 	err = regClient.Call("Registry.Register", regArgs, &ok)
@@ -86,13 +91,12 @@ func main() {
 		log.Println("Registrato con successo al Registry")
 	}
 
-	// 4. Gestione Deregistrazione allo spegnimento (CTRL+C)
+	// 5. Gestione spegnimento pulito (Deregister)
 	c := make(chan os.Signal, 1)
 	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
 	go func() {
 		<-c
-		log.Println("\nSpegnimento in corso...")
-		// Comunichiamo al registry che ce ne andiamo
+		log.Println("\nSpegnimento... Deregistrazione in corso")
 		var reply bool
 		deregArgs := common.RegistryArgs{Service: common.ServiceInfo{Addr: addr}}
 		regClient.Call("Registry.Deregister", deregArgs, &reply)
@@ -100,11 +104,9 @@ func main() {
 		os.Exit(0)
 	}()
 
-	// 5. Accettazione richieste
 	for {
 		conn, err := listener.Accept()
 		if err != nil {
-			log.Printf("Errore accettazione connessione: %v", err)
 			continue
 		}
 		go rpc.ServeConn(conn)
