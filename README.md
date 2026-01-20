@@ -1,60 +1,78 @@
-# Progetto Sistemi Distribuiti: RPC Service Registry & Load Balancing
+Progetto Sistemi Distribuiti: RPC Service Registry & Load Balancing
 
-**Studente:** Gaia Meola
-**Corso:** Sistemi Distribuiti e Cloud Computing (SDCC)
-**Anno Accademico:** 2025/2026
+Studente: Gaia Meola
 
-## 1. Obiettivo del Progetto
-Realizzazione di un'applicazione distribuita in **Go** che utilizza **RPC** per implementare un sistema di Service Discovery lato client. Il sistema permette a più server di registrarsi presso un Registry centrale e a più client di consumare servizi (stateless e stateful) con bilanciamento del carico.
+Corso: Sistemi Distribuiti e Cloud Computing (SDCC)
 
-## 2. Architettura del Sistema
-L'architettura segue il pattern **Client-Side Service Discovery**:
+Anno Accademico: 2025/2026
+1. Obiettivo del Progetto
 
-* **Service Registry**: Un nodo centrale che mantiene la lista dei server attivi (IP:Porta e Peso).
-* **Replicated Servers**: Più istanze che espongono:
-    * **Servizio Stateless**: Una funzione di calcolo (es. Somma) che non dipende da chiamate precedenti.
-    * **Servizio Stateful**: Un contatore globale la cui consistenza è garantita tra tutte le repliche tramite un sistema di archiviazione comune (File System locale).
-* **Client**: Interroga il Registry, salva i server in una **Cache locale** e applica algoritmi di **Load Balancing**.
+Sviluppo di un'applicazione distribuita in Go basata su RPC che implementa il pattern Client-Side Service Discovery. Il sistema permette la gestione dinamica di microservizi replicati, garantendo il bilanciamento del carico e la consistenza dello stato tra le repliche.
+2. Architettura del Sistema
 
+Il sistema si basa su tre componenti principali che interagiscono secondo il modello Service-Oriented:
 
+    Service Registry (Service Discovery Server): Nodo centrale responsabile del monitoraggio dei server attivi. Gestisce le operazioni di Register, Deregister e fornisce la lista dei provider ai client tramite Lookup.
 
----
+    Service Providers (Replicated Servers): Istanze multiple che espongono:
 
-## 3. Funzionalità Implementate
+        Servizio Stateless: Una funzione di somma (Add) che non mantiene memoria delle interazioni passate.
 
-### Service Discovery & Lifecycle
-- **Self-Registration**: All'avvio, ogni server comunica al Registry il proprio indirizzo e il proprio "peso".
-- **Deregistration**: Allo spegnimento, il server informa il Registry per essere rimosso dalla lista.
-- **Lookup**: Il client ottiene la lista aggiornata dei server disponibili.
+        Servizio Stateful: Un contatore globale condiviso. La consistenza forte tra le repliche è garantita tramite uno Shared File Storage (state/counter.txt), simulando il comportamento di un database esterno come suggerito dai requisiti delle slide (Pag. 2).
 
-### Load Balancing & Caching (Lato Client)
-- **Caching Dinamica**: Il client non interroga il Registry a ogni chiamata, ma mantiene una cache locale con un TTL (Time-To-Live).
-- **Invalidazione Automatica**: Se un server non risponde, il client invalida la cache e richiede una nuova lista al Registry.
-- **Algoritmi di Bilanciamento**:
-    - **Round Robin**: Selezione ciclica dei server.
-    - **Weighted**: Selezione basata sul peso del server (maggiore è il peso, più richieste riceve).
+    Service Consumer (Client): Implementa la logica di scoperta e consumo dei servizi. Utilizza una Cache locale per ottimizzare le performance e ridurre il traffico verso il Registry.
 
-### Consistenza dello Stato (Stateful Service)
-Per garantire che il servizio stateful sia consistente tra le repliche senza l'uso di Docker Volumes, il sistema utilizza un file condiviso (`state/counter.txt`) protetto da meccanismi di sincronizzazione, simulando un database esterno.
+3. Funzionalità Tecniche Implementate
+Bilanciamento del Carico (Load Balancing)
 
----
+Il client implementa algoritmi di selezione dinamica per distribuire le richieste RPC:
 
-## 4. Struttura del Progetto
-```text
+    Weighted Load Balancing: Algoritmo che distribuisce il carico in base al "peso" (capacità computazionale) dichiarato da ogni server nel file di configurazione.
+
+    Fault Tolerance: In caso di fallimento di una chiamata (server offline), il client invalida automaticamente la cache locale e forza una nuova Lookup al Registry.
+
+Meccanismo di Caching
+
+    TTL (Time-To-Live): La lista dei server è mantenuta in memoria per un intervallo configurabile (es. 15s) per minimizzare l'overhead di rete.
+
+    Aggiornamento Dinamico: La cache viene aggiornata solo alla scadenza del TTL o in caso di errore di connessione.
+
+Configurazione Centralizzata
+
+Tutti i parametri critici del sistema sono isolati nel file config.json, permettendo di modificare l'infrastruttura (porte, pesi dei server, indirizzo del registry) senza dover ricompilare il codice sorgente.
+4. Struttura del Progetto
+Plaintext
+
 service-registry-go/
-├── common/           # Strutture dati condivise e definizioni RPC
-├── registry/         # Codice del Service Registry
-├── server/           # Logica dei server (Stateless + Stateful)
-├── client/           # Logica del client, Load Balancer e Cache
-└── state/            # Directory locale per la persistenza dello stato
+├── common/           # Strutture dati, definizioni RPC e logica di caricamento JSON
+├── registry/         # Implementazione del Service Registry
+├── server/           # Logica del Service Provider (Stateless + Stateful)
+├── client/           # Logica del Service Consumer, Load Balancer e Cache
+├── state/            # Directory per la persistenza dello stato condiviso
+├── config.json       # File di configurazione centralizzato
+└── run.sh            # Script di orchestrazione e gestione automatica dei processi
 
-## 6. Esecuzione Rapida (Script)
-## Istruzioni per l'uso
-Il sistema è interamente configurabile tramite il file `config.json` nella root del progetto.
+5. Guida all'Esecuzione
+Prerequisiti
 
-### Avvio rapido
-1. Aprire il terminale nella root del progetto.
-2. Eseguire lo script: `./run.sh`
-3. Selezionare l'opzione `1` per avviare l'intero ecosistema.
+    Go 1.20 o superiore.
 
-Lo script si occuperà di lanciare il Registry, leggere i server definiti nel JSON, avviarli con i rispettivi pesi e far partire il client di test.
+    Ambiente Linux/WSL2 per l'esecuzione dello script di automazione.
+
+Avvio Interattivo
+
+Il progetto include uno script di orchestrazione che automatizza la pulizia delle porte e l'avvio sincronizzato dei componenti:
+
+    Posizionarsi nella root del progetto: cd service-registry-go
+
+    Rendere lo script eseguibile: chmod +x run.sh
+
+    Eseguire lo script: ./run.sh
+
+    Selezionare l'opzione 1 per avviare l'intero ecosistema.
+
+Verifica dei Requisiti
+
+    Consistenza: Il contatore globale incrementa in modo coerente indipendentemente dal server selezionato dal Load Balancer.
+
+    Discovery: Spegnendo un server (CTRL+C), il Registry lo rimuove e il Client smette di inviargli richieste dopo l'aggiornamento della cache.
