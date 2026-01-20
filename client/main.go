@@ -5,7 +5,6 @@ import (
 	"log"
 	"math/rand"
 	"net/rpc"
-	"os"
 	"service-registry-go/common"
 	"time"
 )
